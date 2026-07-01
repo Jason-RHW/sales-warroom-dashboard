@@ -2,12 +2,14 @@
   "version": 2,
   "builds": [
     { "src": "api/index.py", "use": "@vercel/python" },
-    { "src": "index.html",   "use": "@vercel/static"  }
+    { "src": "index.html",   "use": "@vercel/static"  },
+    { "src": "audio/**",     "use": "@vercel/static"  }
   ],
   "routes": [
     { "src": "/api/(.*)",      "dest": "/api/index.py" },
     { "src": "/webhooks/(.*)", "dest": "/api/index.py" },
     { "src": "/health",        "dest": "/api/index.py" },
+    { "src": "/audio/(.*)",    "dest": "/audio/$1"     },
     { "src": "/",              "dest": "/index.html"   }
   ]
 }

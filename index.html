@@ -744,6 +744,72 @@
   }
 
   /* ============================================================
+     SAMPLE SOUND EFFECT
+     Plays crowd cheer then a voice announcement when any SDR's
+     sample count increases. Files live in /audio/ in the repo.
+     SDRs without a voice file get the cheer only.
+  ============================================================ */
+  const CHEER_SRC = '/audio/cheer.mp3';
+  const SAMPLE_VOICE_FILES = {
+    'grace':   '/audio/sample_grace.mp3',
+    'maria':   '/audio/sample_maria.mp3',
+    // Add more as you generate them: 'jason': '/audio/sample_jason.mp3', etc.
+  };
+
+  let prevSamples = {};        // sdrName → last known sample count
+  let sampleQueue = [];        // SDR names queued for announcement
+  let isPlayingAudio = false;
+
+  function playSampleAnnouncement(sdrName) {
+    isPlayingAudio = true;
+    const key = sdrName.split(' ')[0].toLowerCase();
+    const voiceSrc = SAMPLE_VOICE_FILES[key];
+
+    const playCheer = () => {
+      const cheer = new Audio(CHEER_SRC);
+      cheer.volume = 0.7;
+      cheer.play().catch(() => {});
+      cheer.onended = () => {
+        isPlayingAudio = false;
+        playNextInQueue();
+      };
+    };
+
+    if (voiceSrc) {
+      const voice = new Audio(voiceSrc);
+      voice.volume = 1.0;
+      voice.play().catch(() => {});
+      voice.onended = playCheer;
+    } else {
+      playCheer();
+    }
+  }
+
+  function playNextInQueue() {
+    if (sampleQueue.length === 0 || isPlayingAudio) return;
+    const next = sampleQueue.shift();
+    playSampleAnnouncement(next);
+  }
+
+  function detectSampleIncreases(sdrTable) {
+    // Skip on the very first poll — no baseline to compare against yet
+    if (Object.keys(prevSamples).length === 0) {
+      sdrTable.forEach(s => { prevSamples[s.name] = s.samples || 0; });
+      return;
+    }
+    sdrTable.forEach(s => {
+      const prev = prevSamples[s.name] ?? 0;
+      const curr = s.samples || 0;
+      if (curr > prev) {
+        // SDR got a new sample — queue an announcement
+        sampleQueue.push(s.name);
+      }
+      prevSamples[s.name] = curr;
+    });
+    if (!isPlayingAudio) playNextInQueue();
+  }
+
+  /* ============================================================
      POLLING LOOP
   ============================================================ */
   let usedFallback = false;
@@ -756,6 +822,7 @@
       if(!res.ok) throw new Error('Bad response: ' + res.status);
       const payload = await res.json();
       render(payload);
+      detectSampleIncreases(payload.sdr_table);
       setStatus('live', 'Live');
       usedFallback = false;
     } catch(err){
