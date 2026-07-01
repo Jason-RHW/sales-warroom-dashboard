@@ -151,6 +151,12 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
         sdr_name = user.get("name", "Unknown SDR")
         phone_number = (data.get("raw_digits") or data.get("number") or "")
 
+        # Only track outbound calls — inbound calls are customer-initiated
+        # and shouldn't appear on the SDR outreach dashboard
+        direction = data.get("direction", "outbound")
+        if direction == "inbound":
+            return {"received": True, "ignored": True, "reason": "inbound call"}
+
         # Customer name — only present if this number is saved as a contact
         # in Aircall's contact book. Null for cold/unknown numbers.
         contact = data.get("contact") or {}
