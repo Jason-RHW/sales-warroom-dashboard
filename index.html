@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sales Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-base:#0E1628;
+    --bg-surface:#182338;
+    --bg-surface-2:#1F2C45;
+    --bg-surface-3:#273552;
+    --border:#344563;
+    --border-soft:#263450;
+    --text-primary:#F5F7FF;
+    --text-secondary:#B0BCDA;
+    --text-tertiary:#7A8CAE;
+    --blue:#4D9EFF;
+    --blue-glow:#74B8FF;
+    --blue-dim:rgba(77,158,255,0.22);
+    --green:#2DD96A;
+    --green-dim:rgba(45,217,106,0.20);
+    --orange:#FFB020;
+    --orange-dim:rgba(255,176,32,0.20);
+    --tile-inactive:#1E2E4A;
+    --tile-inactive-text:#6B7FA0;
+    --radius-card:16px;
+    --radius-sm:10px;
+    --font-display:'Manrope',sans-serif;
+    --font-body:'Inter',sans-serif;
+    --font-mono:'JetBrains Mono',monospace;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  body{
+    background:
+      radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(77,158,255,0.14), transparent 60%),
+      var(--bg-base);
+    color:var(--text-primary);
+    font-family:var(--font-body);
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    padding:18px 22px;
+  }
+
+  .scale-wrap{
+    width:min(100%, 1840px);
+    height:calc(100vh - 36px);
+    margin:0 auto;
+    display:grid;
+    grid-template-rows:auto auto minmax(0,1fr);
+    gap:12px;
+    min-height:0;
+  }
+
+  /* ===== HEADER ===== */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    min-height:42px;
+  }
+  .brand{ display:flex; align-items:center; gap:14px; }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px;
+    background:linear-gradient(135deg, var(--blue), #1D4ED8);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 1px rgba(96,165,250,0.3), 0 4px 16px rgba(59,130,246,0.35);
+    flex-shrink:0;
+  }
+  .brand-mark svg{ width:18px; height:18px; }
+  .brand-text h1{
+    font-family:var(--font-display); font-weight:800; font-size:18px;
+    letter-spacing:0; line-height:1.1;
+  }
+  .brand-text .sub{
+    font-size:11px; color:var(--text-tertiary); font-weight:500;
+    letter-spacing:0.04em; text-transform:uppercase; margin-top:3px;
+  }
+  .clock-block{ display:flex; align-items:center; gap:18px; }
+  .clock-block .date{
+    font-family:var(--font-mono); font-size:18px; font-weight:600;
+    letter-spacing:0.02em; color:var(--text-primary);
+  }
+  .clock-block .time{
+    font-family:var(--font-mono); font-size:18px; font-weight:600; letter-spacing:0.02em;
+  }
+  @keyframes pulse-dot{
+    0%{ box-shadow:0 0 0 0 rgba(34,197,94,0.55);}
+    70%{ box-shadow:0 0 0 7px rgba(34,197,94,0);}
+    100%{ box-shadow:0 0 0 0 rgba(34,197,94,0);}
+  }
+  .topbar-right{ display:flex; align-items:center; gap:18px; }
+  .data-status{
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--font-mono); font-size:11px; font-weight:600;
+    letter-spacing:0.03em; text-transform:uppercase; color:var(--text-tertiary);
+  }
+  .data-status-dot{ width:7px; height:7px; border-radius:50%; background:var(--text-tertiary); flex-shrink:0; }
+  .data-status.live{ color:var(--green); }
+  .data-status.live .data-status-dot{ background:var(--green); animation:pulse-dot 1.8s infinite; }
+  .data-status.demo{ color:var(--orange); }
+  .data-status.demo .data-status-dot{ background:var(--orange); }
+  .data-status.error{ color:#EF4444; }
+  .data-status.error .data-status-dot{ background:#EF4444; }
+
+  /* ===== KPI ROW ===== */
+  .kpi-row{
+    display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px;
+    min-height:96px;
+  }
+  .kpi-card{
+    background:var(--bg-surface);
+    border:1px solid var(--border-soft);
+    border-radius:12px;
+    padding:14px 16px 12px;
+    position:relative; overflow:hidden;
+  }
+  .kpi-card::after{
+    content:""; position:absolute; top:0; left:0; right:0; height:2px;
+    background:var(--kpi-accent, var(--blue)); opacity:0.85;
+  }
+  .kpi-label{
+    font-size:10.5px; color:var(--text-secondary); font-weight:600;
+    text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .kpi-value{
+    font-family:var(--font-mono); font-size:30px; font-weight:700;
+    letter-spacing:0; color:var(--text-primary); line-height:1;
+  }
+  .kpi-value .unit{ font-size:16px; color:var(--text-tertiary); font-weight:500; margin-left:2px;}
+  .kpi-foot{
+    display:flex; align-items:center; gap:6px; margin-top:8px;
+    font-size:11.5px; font-weight:600; font-family:var(--font-mono);
+  }
+  .kpi-foot.up{ color:var(--green); }
+  .kpi-foot.down{ color:var(--orange); }
+  .kpi-foot.flat{ color:var(--text-tertiary); }
+  .kpi-foot .ctx{ color:var(--text-tertiary); font-weight:500; font-family:var(--font-body); }
+  .live-icon-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--blue-glow);
+    animation:pulse-dot 1.6s infinite; box-shadow:0 0 0 0 rgba(96,165,250,0.5);
+  }
+
+  /* ===== MAIN GRID ===== */
+  .dashboard-grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.58fr) minmax(420px,0.82fr);
+    gap:12px;
+    min-height:0;
+  }
+
+  .panel{
+    background:var(--bg-surface);
+    border:1px solid var(--border-soft);
+    border-radius:12px;
+    padding:14px;
+    min-height:0;
+  }
+  .map-panel{ display:flex; flex-direction:column; min-height:0; }
+  .side-rail{
+    display:grid;
+    grid-template-rows:minmax(0,1.08fr) minmax(0,0.92fr);
+    gap:12px;
+    min-height:0;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:10px;
+    flex-shrink:0;
+  }
+  .panel-title{
+    font-family:var(--font-display); font-weight:700; font-size:15px;
+    letter-spacing:0;
+  }
+  .panel-title .count{
+    font-family:var(--font-mono); color:var(--blue-glow); font-weight:600; margin-left:6px;
+  }
+  .panel-sub{ font-size:11.5px; color:var(--text-tertiary); margin-top:2px; font-weight:500;}
+  .legend{ display:flex; gap:14px; align-items:center; }
+  .legend-item{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); font-weight:500;}
+  .legend-swatch{ width:9px; height:9px; border-radius:3px; }
+
+  /* ===== MAP ===== */
+  .map-wrap{ position:relative; flex:1; min-height:0; display:flex; }
+  .map-grid{
+    display:grid;
+    grid-template-columns:repeat(11, minmax(0,1fr));
+    grid-auto-rows:minmax(0,1fr);
+    gap:4px;
+    position:relative;
+    flex:1;
+    min-height:0;
+  }
+  .state-tile{
+    border-radius:7px;
+    background:var(--tile-inactive);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:700; font-size:14px;
+    color:var(--tile-inactive-text);
+    position:relative; cursor:pointer;
+    transition:transform .15s ease;
+    border:1px solid rgba(255,255,255,0.04);
+  }
+  .state-tile:hover{ transform:translateY(-2px); z-index:5; }
+  .state-tile .badge{
+    position:absolute; top:-5px; right:-5px;
+    width:17px; height:17px; border-radius:50%;
+    font-size:9.5px; font-family:var(--font-mono); font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; background:var(--orange);
+    border:2px solid var(--bg-surface);
+  }
+  .state-tile.active{
+    background:rgba(45,217,106,0.22);
+    color:#4DFFA0;
+    border:1px solid rgba(45,217,106,0.55);
+    box-shadow:0 0 0 0 rgba(45,217,106,0.5);
+    animation:tile-glow 2.2s ease-in-out infinite;
+  }
+  .state-tile.active.high{
+    background:rgba(45,217,106,0.35);
+    border:1px solid rgba(45,217,106,0.8);
+    color:#7EFFBC;
+  }
+  @keyframes tile-glow{
+    0%,100%{ box-shadow:0 0 0 0 rgba(45,217,106,0.0); }
+    50%{ box-shadow:0 0 18px 2px rgba(45,217,106,0.4); }
+  }
+  .state-tile .abbr{ letter-spacing:0.03em; }
+  .state-tile .tile-total{ font-size:10px; color:var(--text-secondary); margin-top:2px; font-family:var(--font-mono); font-weight:600; opacity:0.9;}
+  .feed-call-time{
+    font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
+    font-weight:500; white-space:nowrap;
+  }
+
+  /* ===== ACTIVITY FEED ===== */
+  .feed-panel{ display:flex; flex-direction:column; height:100%; }
+  .feed-list{
+    display:flex; flex:1; flex-direction:column; gap:7px;
+    overflow:hidden; padding-right:0; min-height:0;
+  }
+  .feed-item{
+    display:flex; gap:9px; padding:9px 10px;
+    background:var(--bg-surface-2); border:1px solid var(--border-soft);
+    border-radius:9px; align-items:center;
+    flex:0 0 auto; min-height:58px;
+  }
+  .feed-avatar{
+    width:32px; height:32px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:11.5px; color:#fff;
+  }
+  .feed-body{ flex:1; min-width:0; }
+  .feed-top{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .feed-name{ display:flex; align-items:center; gap:6px; min-width:0; font-size:12px; font-weight:600; color:var(--text-primary); }
+  .feed-arrow{ color:var(--text-tertiary); font-weight:500; }
+  .feed-timer{ font-family:var(--font-mono); font-size:11px; color:var(--blue-glow); font-weight:600; flex-shrink:0;}
+  .feed-company{ font-size:12px; line-height:1.25; color:var(--text-secondary); margin-top:3px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .feed-meta{ display:flex; align-items:center; gap:6px; margin-top:5px;}
+  .status-tag{
+    font-size:10px; font-weight:700; padding:2.5px 7px; border-radius:5px;
+    text-transform:uppercase; letter-spacing:0.03em; font-family:var(--font-mono);
+  }
+  .status-tag.connected{ background:var(--green-dim); color:var(--green); }
+  .status-tag.ringing{ background:var(--orange-dim); color:var(--orange); }
+  .status-tag.dialing{ background:var(--blue-dim); color:var(--blue-glow); }
+  .status-tag.ended{ background:rgba(139,147,171,0.12); color:var(--text-tertiary); }
+  .status-tag.voicemail{ background:rgba(139,147,171,0.12); color:var(--text-tertiary); }
+  .status-tag.compact{ font-size:8.5px; padding:2px 5px; line-height:1; flex-shrink:0; }
+  .feed-industry{ font-size:10.5px; color:var(--text-tertiary); font-weight:500;}
+
+  /* ===== SDR TABLE ===== */
+  .table-panel{ padding:14px 14px 8px; overflow:hidden; }
+  table{ width:100%; border-collapse:collapse; }
+  thead th{
+    text-align:left; font-size:10.5px; color:var(--text-tertiary);
+    text-transform:uppercase; letter-spacing:0.05em; font-weight:600;
+    padding:0 8px 9px; border-bottom:1px solid var(--border-soft);
+  }
+  thead th.num{ text-align:right; }
+  tbody td{
+    padding:8px; border-bottom:1px solid var(--border-soft);
+    font-size:12.5px; vertical-align:middle;
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover{ background:rgba(255,255,255,0.015); }
+  td.num{ text-align:right; font-family:var(--font-mono); font-weight:600; color:var(--text-primary); }
+  .sdr-cell{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .sdr-av{
+    width:30px; height:30px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:11px; color:#fff;
+  }
+  .sdr-name{ font-weight:600; font-size:12.5px; white-space:nowrap; }
+  .connect-rate-bar{ display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+  .crb-track{ width:48px; height:5px; border-radius:4px; background:var(--bg-surface-3); overflow:hidden; }
+  .crb-fill{ height:100%; border-radius:4px; background:var(--green); }
+
+  @media (max-height:900px){
+    body{ padding:12px 16px; }
+    .scale-wrap{ height:calc(100vh - 24px); gap:9px; }
+    .topbar{ min-height:36px; }
+    .brand-mark{ width:30px; height:30px; }
+    .brand-text h1{ font-size:16px; }
+    .brand-text .sub,.clock-block .date{ font-size:10px; }
+    .clock-block .time{ font-size:16px; }
+    .kpi-row{ min-height:82px; gap:9px; }
+    .kpi-card{ padding:11px 12px 10px; }
+    .kpi-label{ font-size:9.5px; margin-bottom:6px; }
+    .kpi-value{ font-size:25px; }
+    .kpi-foot{ font-size:10px; margin-top:6px; }
+    .panel{ padding:11px; }
+    .panel-head{ margin-bottom:8px; }
+    .panel-title{ font-size:13.5px; }
+    .panel-sub{ font-size:10.5px; }
+    .feed-list{ gap:5px; }
+    .feed-item{ min-height:47px; padding:6px 8px; }
+    tbody td{ padding:6px 7px; }
+  }
+
+  @media (max-width:1200px){
+    body{ height:auto; min-height:100vh; overflow:auto; }
+    .scale-wrap{ height:auto; }
+    .dashboard-grid{ grid-template-columns:1fr; }
+    .side-rail{ grid-template-rows:auto auto; }
+    .kpi-row{ grid-template-columns:repeat(2,1fr); }
+    .map-grid{ grid-auto-rows:38px; }
+  }
+
+</style>
+</head>
+<body>
+<div class="scale-wrap" id="app">
+
+  <!-- HEADER -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 17L9 11L13 15L21 7" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7H21V13" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Sales Command Center</h1>
+        <div class="sub">Outbound Operations &middot; Live</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="data-status" id="dataStatus">
+        <span class="data-status-dot"></span><span id="dataStatusText">Connecting…</span>
+      </div>
+      <div class="clock-block">
+        <div class="date" id="clockDate">Monday, June 30</div>
+        <div class="time" id="clockTime">9:42:18 AM PT</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kpi-card" style="--kpi-accent:var(--blue-glow)">
+      <div class="kpi-label">Active Calls Now <span class="live-icon-dot"></span></div>
+      <div class="kpi-value" id="kpiActiveCalls">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Calls Today</div>
+      <div class="kpi-value" id="kpiCallsToday">—</div>
+    </div>
+    <div class="kpi-card" style="--kpi-accent:var(--green)">
+      <div class="kpi-label">Connect Rate</div>
+      <div class="kpi-value" id="kpiConnectRate">—</div>
+    </div>
+    <div class="kpi-card" style="--kpi-accent:var(--green)">
+      <div class="kpi-label">Answered Calls</div>
+      <div class="kpi-value" id="kpiAnswered">—</div>
+    </div>
+    <div class="kpi-card" style="--kpi-accent:var(--orange)">
+      <div class="kpi-label">Total Samples</div>
+      <div class="kpi-value" id="kpiSamples">—</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID: MAP + RIGHT RAIL -->
+  <div class="dashboard-grid">
+
+    <!-- MAP PANEL -->
+    <div class="panel map-panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Live Outreach Map</div>
+          <div class="panel-sub">Customer location, sourced from HubSpot company records</div>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--green-dim); border:1px solid rgba(34,197,94,0.5);"></span>Active</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:rgba(34,197,94,0.28); border:1px solid rgba(34,197,94,0.7);"></span>Heavy (3+)</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--tile-inactive);"></span>No activity</div>
+        </div>
+      </div>
+
+      <div class="map-wrap">
+        <div class="map-grid" id="mapGrid"></div>
+      </div>
+    </div>
+
+    <div class="side-rail">
+      <!-- ACTIVITY FEED PANEL -->
+      <div class="panel feed-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Live Activity</div>
+            <div class="panel-sub">Newest call events</div>
+          </div>
+        </div>
+        <div class="feed-list" id="feedList"></div>
+      </div>
+
+      <!-- SDR PERFORMANCE TABLE -->
+      <div class="panel table-panel leaderboard-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Top SDRs Today</div>
+            <div class="panel-sub">Ranked by total calls</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>SDR</th>
+              <th class="num">Calls</th>
+              <th class="num">Connect</th>
+              <th class="num">Sample</th>
+            </tr>
+          </thead>
+          <tbody id="sdrTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  /* ============================================================
+     API CONFIG
+     Point this at your deployed backend once it's live. Left as
+     a relative path so it works automatically if the frontend is
+     served from the same origin as the API.
+  ============================================================ */
+  const API_BASE_URL = window.SCC_API_BASE_URL || '';  // empty = same origin (Vercel)
+  const POLL_INTERVAL_MS = 5000;
+
+  /* ---------- CLOCK ---------- */
+  function tick(){
+    const now = new Date();
+    const opts = { hour:'numeric', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'America/Los_Angeles' };
+    document.getElementById('clockTime').textContent = now.toLocaleTimeString('en-US', opts) + ' PT';
+    const dopts = { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'America/Los_Angeles' };
+    document.getElementById('clockDate').textContent = now.toLocaleDateString('en-US', dopts);
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- SDR COLOR / AVATAR HELPERS ---------- */
+  const sdrColors = {
+    'Jason':'#3B82F6','Amy':'#F59E0B','John':'#22C55E','Grace':'#A855F7',
+    'Maria':'#EC4899','Basilio':'#06B6D4','Henry':'#EF4444','Lhoreto':'#84CC16'
+  };
+  function initials(name){ return name.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase(); }
+  function toTitleCase(str){
+    return (str || '').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
+  function avatarHtml(name, size){
+    const displayName = toTitleCase(name);
+    const c = sdrColors[displayName] || sdrColors[name] || '#64748B';
+    return `<div style="background:${c}; width:${size}px; height:${size}px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Manrope',sans-serif; font-weight:700; color:#fff; font-size:${size*0.36}px; flex-shrink:0;">${initials(displayName)}</div>`;
+  }
+  function fmtTimer(totalSeconds){
+    const m = Math.floor(totalSeconds/60), s = totalSeconds%60;
+    return `${m}:${String(s).padStart(2,'0')}`;
+  }
+
+  /* ============================================================
+     STATE GRID LAYOUT (static - 11 cols x 8 rows)
+     This is just tile geometry/names. Which tiles are active and
+     their counts comes from the API on every poll.
+  ============================================================ */
+  const stateLayout = [
+    {a:'AK', n:'Alaska', col:0, row:0}, {a:'ME', n:'Maine', col:9, row:0},
+    {a:'VT', n:'Vermont', col:7, row:1}, {a:'NH', n:'New Hampshire', col:8, row:1},
+    {a:'WA', n:'Washington', col:0, row:2}, {a:'ID', n:'Idaho', col:1, row:2},
+    {a:'MT', n:'Montana', col:2, row:2}, {a:'ND', n:'North Dakota', col:3, row:2},
+    {a:'MN', n:'Minnesota', col:4, row:2}, {a:'IL', n:'Illinois', col:5, row:2},
+    {a:'WI', n:'Wisconsin', col:6, row:2}, {a:'MI', n:'Michigan', col:7, row:2},
+    {a:'NY', n:'New York', col:8, row:2}, {a:'MA', n:'Massachusetts', col:9, row:2},
+    {a:'OR', n:'Oregon', col:0, row:3}, {a:'NV', n:'Nevada', col:1, row:3},
+    {a:'WY', n:'Wyoming', col:2, row:3}, {a:'SD', n:'South Dakota', col:3, row:3},
+    {a:'IA', n:'Iowa', col:4, row:3}, {a:'IN', n:'Indiana', col:6, row:3},
+    {a:'OH', n:'Ohio', col:7, row:3}, {a:'PA', n:'Pennsylvania', col:8, row:3},
+    {a:'NJ', n:'New Jersey', col:9, row:3}, {a:'CT', n:'Connecticut', col:10, row:3},
+    {a:'CA', n:'California', col:0, row:4}, {a:'UT', n:'Utah', col:1, row:4},
+    {a:'CO', n:'Colorado', col:2, row:4}, {a:'NE', n:'Nebraska', col:3, row:4},
+    {a:'MO', n:'Missouri', col:4, row:4}, {a:'KY', n:'Kentucky', col:5, row:4},
+    {a:'WV', n:'West Virginia', col:6, row:4}, {a:'VA', n:'Virginia', col:7, row:4},
+    {a:'MD', n:'Maryland', col:8, row:4}, {a:'DE', n:'Delaware', col:9, row:4},
+    {a:'RI', n:'Rhode Island', col:10, row:4}, {a:'AZ', n:'Arizona', col:1, row:5},
+    {a:'NM', n:'New Mexico', col:2, row:5}, {a:'KS', n:'Kansas', col:3, row:5},
+    {a:'AR', n:'Arkansas', col:4, row:5}, {a:'TN', n:'Tennessee', col:5, row:5},
+    {a:'NC', n:'North Carolina', col:6, row:5}, {a:'SC', n:'South Carolina', col:7, row:5},
+    {a:'DC', n:'D.C.', col:8, row:5}, {a:'OK', n:'Oklahoma', col:3, row:6},
+    {a:'LA', n:'Louisiana', col:4, row:6}, {a:'MS', n:'Mississippi', col:5, row:6},
+    {a:'AL', n:'Alabama', col:6, row:6}, {a:'GA', n:'Georgia', col:7, row:6},
+    {a:'HI', n:'Hawaii', col:0, row:7}, {a:'TX', n:'Texas', col:2, row:7},
+    {a:'FL', n:'Florida', col:6, row:7},
+  ];
+
+  /* ============================================================
+     EMBEDDED FALLBACK DATA
+     This is a real, backend-verified snapshot (not hand-typed) -
+     captured from a live run of the FastAPI + seed pipeline. Used
+     only if the API can't be reached, so the dashboard still shows
+     something sensible if opened before a backend is deployed.
+  ============================================================ */
+  const FALLBACK_PAYLOAD = {
+  "generated_at": "2026-06-30T08:00:28.707377+00:00",
+  "kpis": {
+    "active_calls_now": 12,
+    "active_states_count": 6,
+    "calls_today": 206,
+    "answered_calls": 69,
+    "voicemails": 90,
+    "connect_rate": 33.5,
+    "avg_talk_seconds": 292
+  },
+  "states": {
+    "CA": {
+      "live": 2,
+      "completed_today": 49,
+      "connect_rate": 43
+    },
+    "NY": {
+      "live": 1,
+      "completed_today": 15,
+      "connect_rate": 27
+    },
+    "GA": {
+      "live": 3,
+      "completed_today": 18,
+      "connect_rate": 28
+    },
+    "TX": {
+      "live": 4,
+      "completed_today": 33,
+      "connect_rate": 36
+    },
+    "OH": {
+      "live": 1,
+      "completed_today": 17,
+      "connect_rate": 41
+    },
+    "IL": {
+      "live": 1,
+      "completed_today": 27,
+      "connect_rate": 33
+    }
+  },
+  "feed": [
+    {
+      "sdr": "John",
+      "company": "Lone Star Freight Co",
+      "state": "TX",
+      "status": "dialing",
+      "timer_seconds": 73
+    },
+    {
+      "sdr": "Jason",
+      "company": "Empire Builders Co",
+      "state": "NY",
+      "status": "ringing",
+      "timer_seconds": 111
+    },
+    {
+      "sdr": "Maria",
+      "company": "Midwest Logistics",
+      "state": "IL",
+      "status": "ringing",
+      "timer_seconds": 125
+    },
+    {
+      "sdr": "Grace",
+      "company": "Lone Star Freight Co",
+      "state": "TX",
+      "status": "ringing",
+      "timer_seconds": 133
+    },
+    {
+      "sdr": "Henry",
+      "company": "Pacific Crest Dental",
+      "state": "CA",
+      "status": "connected",
+      "timer_seconds": 181
+    },
+    {
+      "sdr": "Jason",
+      "company": "Sunbelt Restaurant Group",
+      "state": "GA",
+      "status": "dialing",
+      "timer_seconds": 188
+    },
+    {
+      "sdr": "Amy",
+      "company": "Golden Gate Foods",
+      "state": "CA",
+      "status": "ringing",
+      "timer_seconds": 234
+    },
+    {
+      "sdr": "Lhoreto",
+      "company": "Lone Star Freight Co",
+      "state": "TX",
+      "status": "dialing",
+      "timer_seconds": 271
+    }
+  ],
+  "sdr_table": [
+    {
+      "name": "Grace",
+      "calls": 27,
+      "answered": 10,
+      "connect_rate": 37
+    },
+    {
+      "name": "Henry",
+      "calls": 27,
+      "answered": 10,
+      "connect_rate": 37
+    },
+    {
+      "name": "Basilio",
+      "calls": 24,
+      "answered": 10,
+      "connect_rate": 42
+    },
+    {
+      "name": "Lhoreto",
+      "calls": 23,
+      "answered": 9,
+      "connect_rate": 39
+    },
+    {
+      "name": "Maria",
+      "calls": 30,
+      "answered": 9,
+      "connect_rate": 30
+    },
+    {
+      "name": "John",
+      "calls": 24,
+      "answered": 8,
+      "connect_rate": 33
+    }
+  ]
+};
+
+  /* ============================================================
+     RENDER FUNCTIONS
+  ============================================================ */
+  function renderKpis(kpis){
+    document.getElementById('kpiActiveCalls').textContent = kpis.active_calls_now;
+    document.getElementById('kpiCallsToday').textContent = kpis.calls_today;
+    document.getElementById('kpiConnectRate').innerHTML = `${kpis.connect_rate}<span class="unit">%</span>`;
+    document.getElementById('kpiAnswered').textContent = kpis.answered_calls;
+    document.getElementById('kpiSamples').textContent = kpis.samples_today ?? 0;
+  }
+
+  function renderMap(statesFromApi, stateTotals){
+    const mapGrid = document.getElementById('mapGrid');
+    mapGrid.innerHTML = '';
+    const allTotals = Object.assign({}, stateTotals || {});
+    Object.entries(statesFromApi).forEach(([abbr, d]) => {
+      allTotals[abbr] = d.total_today || d.completed_today || 0;
+    });
+    stateLayout.forEach(s=>{
+      const live = statesFromApi[s.a];
+      const totalToday = allTotals[s.a] || 0;
+      const tile = document.createElement('div');
+      tile.className = 'state-tile' + (live ? ' active' : '') + (live && live.live>=3 ? ' high' : '');
+      tile.style.gridColumn = (s.col+1);
+      tile.style.gridRow = (s.row+1);
+      let inner = `<span class="abbr">${s.a}</span>`;
+      if(totalToday > 0) inner += `<span class="tile-total">${totalToday}</span>`;
+      tile.innerHTML = inner;
+      if(live){
+        const badge = document.createElement('div');
+        badge.className='badge';
+        badge.textContent = live.live;
+        tile.appendChild(badge);
+      }
+      mapGrid.appendChild(tile);
+    });
+  }
+
+  function renderFeed(feed){
+    const feedList = document.getElementById('feedList');
+    feedList.innerHTML = feed.slice(0,5).map(f=>`
+      <div class="feed-item">
+        ${avatarHtml(f.sdr, 32)}
+        <div class="feed-body">
+          <div class="feed-top">
+            <div class="feed-name">${toTitleCase(f.sdr)} <span class="feed-arrow">&rarr;</span><span class="status-tag compact ${f.status}">${f.status}</span></div>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+              ${f.started_at_time ? `<span class="feed-call-time">${f.started_at_time}</span>` : ''}
+              <div class="feed-timer">${fmtTimer(f.timer_seconds)}</div>
+            </div>
+          </div>
+          <div class="feed-company">${f.company} <span style="color:#5C6584;">(${f.state})</span></div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderSdrTable(sdrTable){
+    const tbody = document.getElementById('sdrTableBody');
+    tbody.innerHTML = sdrTable.map(s=>`
+      <tr>
+        <td><div class="sdr-cell">${avatarHtml(s.name,30)}<div class="sdr-name">${toTitleCase(s.name)}</div></div></td>
+        <td class="num">${s.calls}</td>
+        <td class="num"><div class="connect-rate-bar"><div class="crb-track"><div class="crb-fill" style="width:${s.connect_rate}%; background:${s.connect_rate>=45?'#22C55E':s.connect_rate>=35?'#F59E0B':'#EF4444'}"></div></div>${s.connect_rate}%</div></td>
+        <td class="num">${s.samples > 0 ? s.samples : '—'}</td>
+      </tr>`).join('');
+  }
+
+  function render(payload){
+    renderKpis(payload.kpis);
+    renderMap(payload.states, payload.state_totals);
+    renderFeed(payload.feed);
+    renderSdrTable(payload.sdr_table);
+  }
+
+  function setStatus(mode, text){
+    const el = document.getElementById('dataStatus');
+    el.className = 'data-status ' + mode;
+    document.getElementById('dataStatusText').textContent = text;
+  }
+
+  /* ============================================================
+     POLLING LOOP
+  ============================================================ */
+  let usedFallback = false;
+
+  async function fetchAndRender(){
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/dashboard`, {
+        cache: 'no-store'
+      });
+      if(!res.ok) throw new Error('Bad response: ' + res.status);
+      const payload = await res.json();
+      render(payload);
+      setStatus('live', 'Live');
+      usedFallback = false;
+    } catch(err){
+      if(!usedFallback){
+        render(FALLBACK_PAYLOAD);
+        usedFallback = true;
+      }
+      setStatus('demo', 'Demo data &middot; API unreachable'.replace('&middot;','\u00B7'));
+      console.warn('Dashboard API unreachable, showing fallback data:', err);
+    }
+  }
+
+  fetchAndRender();
+  setInterval(fetchAndRender, POLL_INTERVAL_MS);
+</script>
+</body>
+</html>

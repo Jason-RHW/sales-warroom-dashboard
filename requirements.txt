@@ -1,0 +1,6 @@
+fastapi>=0.117.1
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+python-dotenv>=1.0
+httpx>=0.27
+psycopg2-binary>=2.9  # required for Supabase / any Postgres connection
