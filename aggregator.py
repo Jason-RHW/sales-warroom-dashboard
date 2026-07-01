@@ -19,30 +19,52 @@ from timezone_utils import today_pst_bounds_utc, PACIFIC
 from call_tags import is_answered, is_sample
 
 # Safety net: if a call's hangup event never arrives (dropped webhook,
-# network blip, etc.), it would otherwise sit "active" on the dashboard
-# forever - duration climbing, nothing ever marking it done. Anything still
-# "active" past this many minutes gets auto-closed instead. 20 minutes is
-# generous for even a long discovery call; tune if your team runs longer.
+# Two stale-call thresholds:
+# - dialing/ringing: 1 minute — if it hasn't connected or hung up in 60s,
+#   the webhook chain almost certainly broke (unanswered calls typically
+#   resolve in under 30s)
+# - connected: 20 minutes — generous for even a long discovery call
+STALE_DIALING_MINUTES = 1
 STALE_ACTIVE_CALL_MINUTES = 20
 
 
 def _auto_heal_stale_calls(db: Session) -> None:
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=STALE_ACTIVE_CALL_MINUTES)
-    stale = (
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Short threshold: dialing or ringing calls older than 1 minute
+    dialing_cutoff = now - timedelta(minutes=STALE_DIALING_MINUTES)
+    stale_dialing = (
         db.query(CallEvent)
-        .filter(CallEvent.is_active == True, CallEvent.started_at < cutoff)  # noqa: E712
+        .filter(
+            CallEvent.is_active == True,  # noqa: E712
+            CallEvent.status.in_(["dialing", "ringing"]),
+            CallEvent.started_at < dialing_cutoff,
+        )
         .all()
     )
+
+    # Long threshold: connected calls older than 20 minutes
+    connected_cutoff = now - timedelta(minutes=STALE_ACTIVE_CALL_MINUTES)
+    stale_connected = (
+        db.query(CallEvent)
+        .filter(
+            CallEvent.is_active == True,  # noqa: E712
+            CallEvent.status == "connected",
+            CallEvent.started_at < connected_cutoff,
+        )
+        .all()
+    )
+
+    stale = stale_dialing + stale_connected
     if not stale:
         return
+
     for r in stale:
         r.is_active = False
         r.status = "ended"
         if r.ended_at is None:
-            r.ended_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            r.ended_at = now
         if r.outcome is None:
-            # Never reached an answered/voicemail event before going stale -
-            # treat as missed rather than leaving it uncategorized.
             r.outcome = "missed"
     db.commit()
 
