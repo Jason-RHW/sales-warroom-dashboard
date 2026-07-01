@@ -119,11 +119,11 @@ def build_dashboard_payload(db: Session) -> dict:
 
     # ---- live activity feed ----
     active_sorted = sorted(active_rows, key=lambda r: r.started_at, reverse=True)
-    recent_answered = [r for r in rows if not r.is_active and r.outcome == "answered"]
-    recent_answered.sort(key=lambda r: r.started_at, reverse=True)
+    recent_ended = [r for r in rows if not r.is_active]
+    recent_ended.sort(key=lambda r: r.started_at, reverse=True)
 
     feed = []
-    for r in (active_sorted + recent_answered)[:8]:
+    for r in (active_sorted + recent_ended)[:8]:
         ref_time = r.ended_at or datetime.now(timezone.utc).replace(tzinfo=None)
         elapsed = max(0, int((ref_time - r.started_at).total_seconds()))
         # Format start time as HH:MM AM/PM in PST, stripping leading zero
