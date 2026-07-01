@@ -33,7 +33,7 @@ REQUEST_TIMEOUT_SECONDS = 4.0
 # In-memory cache keyed by digits-only phone number. Resets on restart.
 _phone_lookup_cache: dict[str, dict] = {}
 
-PLACEHOLDER = {"company_name": "Unknown Company", "state": "CA", "industry": None, "hubspot_company_id": None}
+PLACEHOLDER = {"company_name": "Unknown Company", "state": None, "industry": None, "hubspot_company_id": None}
 
 # US area code → state mapping. Used as a fallback when HubSpot returns no
 # match — much better than defaulting everything to CA. Not perfect (VoIP
@@ -244,11 +244,13 @@ async def _strategy_a_name_plus_phone(
     if not filters:
         return None
 
+    print(f"[strategy_a] Searching HubSpot contacts: firstname={first_name!r} lastname={last_name!r}")
     hits = await _hubspot_search(
         client, token, "contacts",
         [{"filters": filters}],
         properties=["firstname", "lastname", "phone", "mobilephone"],
     )
+    print(f"[strategy_a] HubSpot returned {len(hits)} contact(s)")
     if not hits:
         return None
 
@@ -344,16 +346,18 @@ async def lookup_company(
                 client, token, first_name, last_name, phone_number
             )
             if result:
-                print(f"[hubspot_lookup] Strategy A (name) → {result['company_name']}")
+                print(f"[hubspot_lookup] Strategy A (name) → {result['company_name']} ({result['state']})")
             else:
                 print(f"[hubspot_lookup] Strategy A found nothing for '{first_name} {last_name}' — falling back to phone")
 
         if not result:
+            print(f"[hubspot_lookup] Strategy B — trying phone variants for {phone_number}")
             result = await _strategy_b_phone_only(client, token, phone_number)
             if result:
-                print(f"[hubspot_lookup] Strategy B (phone) → {result['company_name']}")
+                print(f"[hubspot_lookup] Strategy B (phone) → {result['company_name']} ({result['state']})")
             else:
-                print(f"[hubspot_lookup] No match found for {phone_number}")
+                state_guess = _state_from_phone(phone_number)
+                print(f"[hubspot_lookup] No HubSpot match — area code state: {state_guess}")
 
     state_fallback = _state_from_phone(phone_number)  # None if area code unrecognized
     final = result if result else {

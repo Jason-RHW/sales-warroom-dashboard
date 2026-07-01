@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal
 from models import CallEvent
-from hubspot_lookup import lookup_company, PLACEHOLDER
+from hubspot_lookup import lookup_company
 from call_tags import serialize_tags
 
 router = APIRouter()
@@ -188,9 +188,9 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
             db.add(CallEvent(
                 aircall_call_id=aircall_call_id,
                 sdr_name=sdr_name,
-                company_name=PLACEHOLDER["company_name"],
-                state=PLACEHOLDER["state"],
-                industry=PLACEHOLDER["industry"],
+                company_name="Unknown Company",
+                state=None,   # set by background task after HubSpot/area code lookup
+                industry=None,
                 status=internal_status,
                 is_active=is_active,
                 outcome="answered" if event_type == "call.answered" else (
