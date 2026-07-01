@@ -91,14 +91,15 @@ def build_dashboard_payload(db: Session) -> dict:
     talk_seconds = [r.talk_seconds for r in answered_rows if r.talk_seconds]
     avg_talk_seconds = round(sum(talk_seconds) / len(talk_seconds)) if talk_seconds else 0
 
-    active_states = {r.state for r in active_rows}
+    active_states = {r.state for r in active_rows if r.state}
 
     # ---- state tiles ----
     state_map: dict[str, dict] = {}
     state_totals: dict[str, int] = {}   # total calls today for ALL states (active + inactive)
     by_state_all = defaultdict(list)
     for r in rows:
-        by_state_all[r.state].append(r)
+        if r.state:  # skip calls with no resolved state
+            by_state_all[r.state].append(r)
 
     for state, state_rows in by_state_all.items():
         active_in_state = [r for r in state_rows if r.is_active]
