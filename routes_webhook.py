@@ -32,8 +32,11 @@ gets overwritten as the call progresses - it is NOT used for KPI counting.
 later hangup, which is what answered_calls/connect_rate actually count from.
 """
 from fastapi import APIRouter, Request, BackgroundTasks
+import os
+from base64 import b64encode
 from datetime import datetime, timezone
 from typing import Optional
+import httpx
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -42,6 +45,7 @@ from hubspot_lookup import lookup_company
 from call_tags import serialize_tags
 
 router = APIRouter()
+AIRCALL_BASE = "https://api.aircall.io/v1"
 
 # Aircall event names -> our internal status. Must match Aircall's actual
 # webhook event names exactly (see developer.aircall.io/api-references).
@@ -78,6 +82,96 @@ def _refresh_aircall_metadata(
 
     if direction and existing.direction != direction:
         existing.direction = direction
+
+
+def _aircall_auth_header() -> Optional[str]:
+    api_id = os.environ.get("AIRCALL_API_ID", "").strip()
+    api_token = os.environ.get("AIRCALL_API_TOKEN", "").strip()
+    if not api_id or not api_token:
+        return None
+    creds = b64encode(f"{api_id}:{api_token}".encode()).decode()
+    return f"Basic {creds}"
+
+
+async def _fetch_call_from_aircall(aircall_call_id: str) -> dict:
+    auth = _aircall_auth_header()
+    if not auth:
+        print("[webhook] AIRCALL_API_ID/AIRCALL_API_TOKEN missing; cannot refresh call")
+        return {}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{AIRCALL_BASE}/calls/{aircall_call_id}",
+                headers={"Authorization": auth},
+                timeout=8.0,
+            )
+            if resp.status_code != 200:
+                print(
+                    f"[webhook] Aircall refresh HTTP {resp.status_code} "
+                    f"for call {aircall_call_id}"
+                )
+                return {}
+            return resp.json().get("call", {})
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        print(f"[webhook] Aircall refresh failed for call {aircall_call_id}: {exc}")
+        return {}
+
+
+async def _refresh_call_from_aircall_in_background(aircall_call_id: str) -> None:
+    """Fetch canonical call details when webhook payloads are incomplete."""
+    call = await _fetch_call_from_aircall(aircall_call_id)
+    if not call:
+        return
+
+    user = call.get("user") or {}
+    sdr_name = (user.get("name") or "").strip() or None
+    direction = (call.get("direction") or "").strip() or None
+    phone_number = call.get("raw_digits") or call.get("number") or ""
+
+    contact = call.get("contact") or {}
+    customer_first_name = (contact.get("first_name") or "").strip() or None
+    customer_last_name = (contact.get("last_name") or "").strip() or None
+
+    company = None
+    if phone_number:
+        company = await lookup_company(
+            phone_number,
+            customer_first_name=customer_first_name,
+            customer_last_name=customer_last_name,
+        )
+
+    db: Session = SessionLocal()
+    try:
+        row = (
+            db.query(CallEvent)
+            .filter(CallEvent.aircall_call_id == aircall_call_id)
+            .first()
+        )
+        if not row:
+            return
+
+        _refresh_aircall_metadata(row, sdr_name, direction)
+
+        if company:
+            row.company_name = company["company_name"]
+            row.state = company["state"]
+            row.industry = company["industry"]
+            row.hubspot_company_id = company.get("hubspot_company_id")
+
+            if row.direction == "inbound":
+                resolved = company.get("contact_name")
+                if not resolved and phone_number:
+                    resolved = _format_phone_number(phone_number)
+                row.contact_name = resolved
+
+        db.commit()
+        print(
+            f"[webhook] Aircall refreshed call_id={aircall_call_id} "
+            f"sdr={row.sdr_name!r} direction={row.direction!r}"
+        )
+    finally:
+        db.close()
 
 
 def _close_call(existing: CallEvent, reason_event: str) -> None:
@@ -173,6 +267,7 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
             f"direction_used={direction_for_insert} "
             f"call_id={aircall_call_id}"
         )
+        needs_aircall_refresh = not sdr_name or not direction
 
         if existing:
             _refresh_aircall_metadata(existing, sdr_name, direction)
@@ -188,6 +283,11 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 if existing.is_active:
                     _close_call(existing, "call.ended")
                 db.commit()
+                if needs_aircall_refresh:
+                    background_tasks.add_task(
+                        _refresh_call_from_aircall_in_background,
+                        aircall_call_id,
+                    )
             return {"received": True, "event": event_type}
 
         # call.tagged fires when an SDR tags a call (during or after the call).
@@ -199,12 +299,22 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 tag_names = [t.get("name", "").strip() for t in raw_tags if t.get("name")]
                 existing.tags = serialize_tags(tag_names) if tag_names else None
                 db.commit()
+                if needs_aircall_refresh:
+                    background_tasks.add_task(
+                        _refresh_call_from_aircall_in_background,
+                        aircall_call_id,
+                    )
             return {"received": True, "event": event_type}
 
         internal_status = AIRCALL_STATUS_MAP.get(event_type)
         if internal_status is None:
             if existing:
                 db.commit()
+                if needs_aircall_refresh:
+                    background_tasks.add_task(
+                        _refresh_call_from_aircall_in_background,
+                        aircall_call_id,
+                    )
             return {"received": True, "ignored": True, "event": event_type}
 
         # Both inbound and outbound are now tracked.
@@ -262,9 +372,18 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 customer_last_name,
                 direction_for_insert,
             )
+            background_tasks.add_task(
+                _refresh_call_from_aircall_in_background,
+                aircall_call_id,
+            )
             return {"received": True, "event": event_type}
 
         db.commit()
+        if needs_aircall_refresh:
+            background_tasks.add_task(
+                _refresh_call_from_aircall_in_background,
+                aircall_call_id,
+            )
     finally:
         db.close()
 
