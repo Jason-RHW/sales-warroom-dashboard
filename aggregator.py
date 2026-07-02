@@ -81,24 +81,29 @@ def build_dashboard_payload(db: Session) -> dict:
         .all()
     )
 
-    calls_today = len(rows)
-    active_rows = [r for r in rows if r.is_active]
-    answered_rows = [r for r in rows if is_answered(r.tags)]
-    voicemail_rows = [r for r in rows if r.outcome == "voicemail"]
-    sample_rows = [r for r in rows if is_sample(r.tags)]
+    # Outbound-only rows (NULL direction treated as outbound for backward compat)
+    outbound_rows   = [r for r in rows if (r.direction or "outbound") == "outbound"]
+
+    calls_today     = len(outbound_rows)
+    active_rows     = [r for r in rows if r.is_active]          # both directions for map/feed
+    outbound_active = [r for r in outbound_rows if r.is_active]
+
+    answered_rows  = [r for r in outbound_rows if is_answered(r.tags)]
+    voicemail_rows = [r for r in outbound_rows if r.outcome == "voicemail"]
+    sample_rows    = [r for r in outbound_rows if is_sample(r.tags)]
 
     connect_rate = round((len(answered_rows) / calls_today) * 100, 1) if calls_today else 0.0
     talk_seconds = [r.talk_seconds for r in answered_rows if r.talk_seconds]
     avg_talk_seconds = round(sum(talk_seconds) / len(talk_seconds)) if talk_seconds else 0
 
-    active_states = {r.state for r in active_rows if r.state}
+    active_states = {r.state for r in outbound_active if r.state}
 
     # ---- state tiles ----
     state_map: dict[str, dict] = {}
     state_totals: dict[str, int] = {}   # total calls today for ALL states (active + inactive)
     by_state_all = defaultdict(list)
-    for r in rows:
-        if r.state:  # skip calls with no resolved state
+    for r in outbound_rows:  # state map counts outbound only
+        if r.state:
             by_state_all[r.state].append(r)
 
     for state, state_rows in by_state_all.items():
@@ -127,22 +132,24 @@ def build_dashboard_payload(db: Session) -> dict:
     for r in (active_sorted + recent_ended)[:8]:
         ref_time = r.ended_at or datetime.now(timezone.utc).replace(tzinfo=None)
         elapsed = max(0, int((ref_time - r.started_at).total_seconds()))
-        # Format start time as HH:MM AM/PM in PST, stripping leading zero
         dt_pst = r.started_at.replace(tzinfo=timezone.utc).astimezone(PACIFIC)
         hour = dt_pst.strftime("%I").lstrip("0") or "12"
         started_at_time = f"{hour}:{dt_pst.strftime('%M')} {dt_pst.strftime('%p')}"
+        direction = r.direction or "outbound"
         feed.append({
             "sdr": r.sdr_name,
             "company": r.company_name,
+            "contact_name": r.contact_name,
             "state": r.state,
             "status": r.status,
+            "direction": direction,
             "timer_seconds": elapsed,
             "started_at_time": started_at_time,
         })
 
-    # ---- SDR leaderboard, ranked by total calls ----
+    # ---- SDR leaderboard — outbound calls only ----
     by_sdr = defaultdict(list)
-    for r in rows:
+    for r in outbound_rows:  # inbound excluded from SDR counts
         by_sdr[r.sdr_name].append(r)
 
     sdr_table = []
