@@ -167,6 +167,7 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
         phone_number = (data.get("raw_digits") or data.get("number") or "")
 
         direction = data.get("direction", "outbound")
+        print(f"[webhook] event={event_type} direction_raw={data.get('direction')!r} direction_used={direction} call_id={aircall_call_id}")
         # Both inbound and outbound are now tracked.
         # Inbound calls are excluded from KPI/SDR counts in the aggregator
         # but shown in the live activity feed.
