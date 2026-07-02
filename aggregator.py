@@ -81,8 +81,12 @@ def build_dashboard_payload(db: Session) -> dict:
         .all()
     )
 
-    # Outbound-only rows (NULL direction treated as outbound for backward compat)
-    outbound_rows   = [r for r in rows if (r.direction or "outbound") == "outbound"]
+    # Outbound-only rows. Unknown SDR rows are treated as unresolved/inbound,
+    # not real outbound activity, so they do not pollute KPIs or leaderboard.
+    outbound_rows   = [
+        r for r in rows
+        if r.direction == "outbound" and r.sdr_name != "Unknown SDR"
+    ]
 
     calls_today     = len(outbound_rows)
     active_rows     = [r for r in rows if r.is_active]          # both directions for map/feed

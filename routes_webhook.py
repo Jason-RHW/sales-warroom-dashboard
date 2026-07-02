@@ -80,6 +80,10 @@ def _refresh_aircall_metadata(
     ):
         existing.sdr_name = sdr_name
 
+    if not sdr_name and existing.sdr_name == "Unknown SDR":
+        existing.direction = "inbound"
+        return
+
     if direction and existing.direction != direction:
         existing.direction = direction
 
@@ -126,7 +130,8 @@ async def _refresh_call_from_aircall_in_background(aircall_call_id: str) -> None
 
     user = call.get("user") or {}
     sdr_name = (user.get("name") or "").strip() or None
-    direction = (call.get("direction") or "").strip() or None
+    raw_direction = (call.get("direction") or "").strip() or None
+    direction = "inbound" if not sdr_name else raw_direction
     phone_number = call.get("raw_digits") or call.get("number") or ""
 
     contact = call.get("contact") or {}
@@ -256,11 +261,11 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
         sdr_name = (user.get("name") or "").strip() or None
         phone_number = (data.get("raw_digits") or data.get("number") or "")
 
-        # Do not turn a missing direction into outbound too early. Aircall
-        # often sends fuller call data on later events, and existing rows are
-        # refreshed below when that better value arrives.
+        # In this team's workflow, real outbound calls carry the SDR user in
+        # the Aircall payload. If there is no SDR, classify it as inbound now
+        # so it never pollutes outbound KPIs while enrichment catches up.
         direction = (data.get("direction") or "").strip() or None
-        direction_for_insert = direction or "outbound"
+        direction_for_insert = "inbound" if not sdr_name else (direction or "outbound")
         print(
             f"[webhook] event={event_type} "
             f"direction_raw={data.get('direction')!r} "
