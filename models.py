@@ -17,7 +17,7 @@ class CallEvent(Base):
     # Who / what
     sdr_name = Column(String, nullable=False, index=True)
     company_name = Column(String, nullable=False)
-    state = Column(String(2), nullable=False, index=True)   # two-letter USPS code
+    state = Column(String(2), nullable=True, index=True)    # two-letter USPS code, or NULL when unresolved
     industry = Column(String, nullable=True)
 
     # Source linkage (filled in once Aircall/HubSpot are connected)

@@ -120,17 +120,17 @@ US_STATE_NAME_TO_ABBR = {
 VALID_STATE_CODES = set(US_STATE_NAME_TO_ABBR.values())
 
 
-def _normalize_state(raw_state: str | None) -> str:
+def _normalize_state(raw_state: str | None) -> str | None:
     if not raw_state:
-        return "CA"
+        return None
     raw_state = raw_state.strip()
     if len(raw_state) == 2 and raw_state.upper() in VALID_STATE_CODES:
         return raw_state.upper()
     mapped = US_STATE_NAME_TO_ABBR.get(raw_state.lower())
     if mapped:
         return mapped
-    print(f"[hubspot_lookup] Unrecognized state value '{raw_state}' - defaulting to CA")
-    return "CA"
+    print(f"[hubspot_lookup] Unrecognized state value '{raw_state}' - leaving state unresolved")
+    return None
 
 
 def _humanize_industry(raw_industry: str | None) -> str | None:
@@ -261,15 +261,23 @@ async def _strategy_a_name_plus_phone(
         call_digits = call_digits[1:]
 
     best = hits[0]
-    if call_digits and len(hits) > 1:
+    if call_digits:
+        best = None
         for hit in hits:
             props = hit.get("properties", {})
-            stored = _digits_only(props.get("phone") or props.get("mobilephone") or "")
-            if len(stored) == 11 and stored.startswith("1"):
-                stored = stored[1:]
-            if stored and stored == call_digits:
-                best = hit
+            stored_numbers = [props.get("phone"), props.get("mobilephone")]
+            for stored_number in stored_numbers:
+                stored = _digits_only(stored_number or "")
+                if len(stored) == 11 and stored.startswith("1"):
+                    stored = stored[1:]
+                if stored and stored == call_digits:
+                    best = hit
+                    break
+            if best:
                 break
+        if not best:
+            print("[strategy_a] Name match found, but phone did not match call number")
+            return None
 
     return await _resolve_contact_to_company(client, token, best)
 
