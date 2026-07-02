@@ -50,17 +50,24 @@ def aircall_auth_header() -> str:
 def map_aircall_call(call: dict) -> dict | None:
     """
     Map a single Aircall call object to our internal schema.
-    Returns None if the call should be skipped (e.g. internal calls).
+    Returns None only for internal (agent-to-agent) calls.
+    Both inbound and outbound are now included.
     """
-    # Skip internal calls (agent-to-agent), they don't appear in the SDR feed
+    # Skip internal calls only — inbound is now tracked
     if call.get("direction") == "internal":
         return None
 
     aircall_id = str(call["id"])
+    direction = call.get("direction") or "outbound"
     user = call.get("user") or {}
     sdr_name = user.get("name") or "Unknown SDR"
 
     raw_digits = call.get("raw_digits") or call.get("number") or ""
+
+    # Customer contact name from Aircall (populated if number is a saved contact)
+    contact = call.get("contact") or {}
+    customer_first_name = (contact.get("first_name") or "").strip() or None
+    customer_last_name  = (contact.get("last_name") or "").strip() or None
 
     started_at_ts = call.get("started_at")
     ended_at_ts = call.get("ended_at")
@@ -96,7 +103,10 @@ def map_aircall_call(call: dict) -> dict | None:
     return {
         "aircall_call_id": aircall_id,
         "sdr_name": sdr_name,
+        "direction": direction,
         "raw_digits": raw_digits,
+        "customer_first_name": customer_first_name,
+        "customer_last_name": customer_last_name,
         "status": status,
         "outcome": outcome,
         "tags": tags,
@@ -189,7 +199,7 @@ async def run():
     print("\nPreview (first 5):")
     for c in to_insert[:5]:
         tags_display = c['tags'] or '(no tags)'
-        print(f"  {c['sdr_name']} | {c['outcome']} | tags: {tags_display} | {c['started_at'].strftime('%H:%M:%S')}")
+        print(f"  [{c['direction']}] {c['sdr_name']} | {c['outcome']} | tags: {tags_display} | {c['started_at'].strftime('%H:%M:%S')}")
 
     if DRY_RUN:
         print(f"\nDry run complete. Run with --write to import {len(to_insert)} calls.")
@@ -197,22 +207,38 @@ async def run():
 
     # Run HubSpot lookups if requested
     if RUN_HUBSPOT:
-        from hubspot_lookup import lookup_company_by_phone
+        from hubspot_lookup import lookup_company
         print(f"\nRunning HubSpot lookups for {len(to_insert)} calls (this may take a minute)...")
         for i, c in enumerate(to_insert):
-            result = await lookup_company_by_phone(c["raw_digits"])
+            result = await lookup_company(
+                c["raw_digits"],
+                customer_first_name=c.get("customer_first_name"),
+                customer_last_name=c.get("customer_last_name"),
+            )
             c["company_name"] = result["company_name"]
             c["state"] = result["state"]
             c["industry"] = result["industry"]
             c["hubspot_company_id"] = result.get("hubspot_company_id")
+            # For inbound calls, store the resolved contact name
+            if c["direction"] == "inbound":
+                resolved = result.get("contact_name")
+                if not resolved and c["raw_digits"]:
+                    digits = "".join(d for d in c["raw_digits"] if d.isdigit())
+                    if len(digits) == 11 and digits.startswith("1"):
+                        digits = digits[1:]
+                    resolved = f"({digits[:3]}) {digits[3:6]}-{digits[6:]}" if len(digits) == 10 else c["raw_digits"]
+                c["contact_name"] = resolved
+            else:
+                c["contact_name"] = None
             if (i + 1) % 10 == 0:
                 print(f"  {i + 1}/{len(to_insert)} lookups done...")
     else:
         for c in to_insert:
             c["company_name"] = "Unknown Company"
-            c["state"] = "CA"
+            c["state"] = None
             c["industry"] = None
             c["hubspot_company_id"] = None
+            c["contact_name"] = None
 
     # Write to DB
     inserted = 0
@@ -224,6 +250,8 @@ async def run():
             state=c["state"],
             industry=c["industry"],
             hubspot_company_id=c.get("hubspot_company_id"),
+            direction=c["direction"],
+            contact_name=c.get("contact_name"),
             status=c["status"],
             outcome=c["outcome"],
             tags=c["tags"],

@@ -78,9 +78,11 @@ async def _enrich_company_in_background(
     phone_number: str,
     customer_first_name: str = None,
     customer_last_name: str = None,
+    direction: str = "outbound",
 ) -> None:
     """Runs AFTER the webhook response has already been sent to Aircall.
-    Uses name+phone (Strategy A) when name is available, phone-only (Strategy B) otherwise."""
+    For outbound: resolves company name and state.
+    For inbound: resolves the caller's contact name, company, and state."""
     company = await lookup_company(
         phone_number,
         customer_first_name=customer_first_name,
@@ -98,6 +100,19 @@ async def _enrich_company_in_background(
             row.state = company["state"]
             row.industry = company["industry"]
             row.hubspot_company_id = company.get("hubspot_company_id")
+            # For inbound calls: use resolved contact name, or fall back to
+            # the formatted phone number as the caller identifier
+            if direction == "inbound":
+                resolved = company.get("contact_name")
+                if not resolved and phone_number:
+                    digits = "".join(c for c in phone_number if c.isdigit())
+                    if len(digits) == 11 and digits.startswith("1"):
+                        digits = digits[1:]
+                    if len(digits) == 10:
+                        resolved = f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+                    else:
+                        resolved = phone_number
+                row.contact_name = resolved
             db.commit()
     finally:
         db.close()
@@ -151,11 +166,10 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
         sdr_name = user.get("name", "Unknown SDR")
         phone_number = (data.get("raw_digits") or data.get("number") or "")
 
-        # Only track outbound calls — inbound calls are customer-initiated
-        # and shouldn't appear on the SDR outreach dashboard
         direction = data.get("direction", "outbound")
-        if direction == "inbound":
-            return {"received": True, "ignored": True, "reason": "inbound call"}
+        # Both inbound and outbound are now tracked.
+        # Inbound calls are excluded from KPI/SDR counts in the aggregator
+        # but shown in the live activity feed.
 
         # Customer name — only present if this number is saved as a contact
         # in Aircall's contact book. Null for cold/unknown numbers.
@@ -189,8 +203,9 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 aircall_call_id=aircall_call_id,
                 sdr_name=sdr_name,
                 company_name="Unknown Company",
-                state=None,   # set by background task after HubSpot/area code lookup
+                state=None,
                 industry=None,
+                direction=direction,
                 status=internal_status,
                 is_active=is_active,
                 outcome="answered" if event_type == "call.answered" else (
@@ -205,6 +220,7 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 phone_number,
                 customer_first_name,
                 customer_last_name,
+                direction,
             )
             return {"received": True, "event": event_type}
 

@@ -271,6 +271,13 @@
   .status-tag.voicemail{ background:rgba(139,147,171,0.12); color:var(--text-tertiary); }
   .status-tag.compact{ font-size:8.5px; padding:2px 5px; line-height:1; flex-shrink:0; }
   .feed-industry{ font-size:10.5px; color:var(--text-tertiary); font-weight:500;}
+  .direction-tag{
+    font-size:8.5px; font-weight:700; padding:2px 5px; border-radius:4px;
+    text-transform:uppercase; letter-spacing:0.04em; font-family:var(--font-mono);
+    flex-shrink:0;
+  }
+  .direction-tag.outbound{ background:var(--green-dim); color:var(--green); }
+  .direction-tag.inbound{ background:var(--orange-dim); color:var(--orange); }
 
   /* ===== SDR TABLE ===== */
   .table-panel{ padding:14px 14px 8px; overflow:hidden; }
@@ -474,6 +481,20 @@
     const displayName = toTitleCase(name);
     const c = sdrColors[displayName] || sdrColors[name] || '#64748B';
     return `<div style="background:${c}; width:${size}px; height:${size}px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Manrope',sans-serif; font-weight:700; color:#fff; font-size:${size*0.36}px; flex-shrink:0;">${initials(displayName)}</div>`;
+  }
+
+  function directionIconHtml(direction, size){
+    size = size || 32;
+    const isInbound = direction === 'inbound';
+    const bg = isInbound ? 'var(--orange)' : 'var(--green)';
+    const arrow = isInbound
+      ? `<line x1="20" y1="10" x2="10" y2="20" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+         <polyline points="10,14 10,20 16,20" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<line x1="10" y1="20" x2="20" y2="10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+         <polyline points="14,10 20,10 20,16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    return `<div style="background:${bg}; width:${size}px; height:${size}px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      <svg width="22" height="22" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">${arrow}</svg>
+    </div>`;
   }
   function fmtTimer(totalSeconds){
     const m = Math.floor(totalSeconds/60), s = totalSeconds%60;
@@ -702,21 +723,34 @@
 
   function renderFeed(feed){
     const feedList = document.getElementById('feedList');
-    feedList.innerHTML = feed.slice(0,5).map(f=>`
+    feedList.innerHTML = feed.slice(0,5).map(f=>{
+      const direction = f.direction || 'outbound';
+      const isInbound = direction === 'inbound';
+      const displayName = isInbound
+        ? (f.contact_name || 'Unknown Contact')
+        : toTitleCase(f.sdr);
+      const iconEl = directionIconHtml(direction, 32);
+      const stateStr = f.state ? ` (${f.state})` : '';
+      const companyLine = `${f.company}${stateStr}`;
+      const subLine = isInbound
+        ? `${companyLine} <span style="color:#5C6584;">· ${toTitleCase(f.sdr)}</span>`
+        : companyLine;
+      return `
       <div class="feed-item">
-        ${avatarHtml(f.sdr, 32)}
+        ${iconEl}
         <div class="feed-body">
           <div class="feed-top">
-            <div class="feed-name">${toTitleCase(f.sdr)} <span class="feed-arrow">&rarr;</span><span class="status-tag compact ${f.status}">${f.status}</span></div>
-            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+            <div class="feed-name">${displayName} <span class="feed-arrow">&rarr;</span><span class="status-tag compact ${f.status}">${f.status}</span></div>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+              <span class="direction-tag ${direction}">${isInbound ? 'Inbound' : 'Outbound'}</span>
               ${f.started_at_time ? `<span class="feed-call-time">${f.started_at_time}</span>` : ''}
               <div class="feed-timer">${fmtTimer(f.timer_seconds)}</div>
             </div>
           </div>
-          <div class="feed-company">${f.company} <span style="color:#5C6584;">(${f.state})</span></div>
+          <div class="feed-company">${subLine}</div>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   function renderSdrTable(sdrTable){
