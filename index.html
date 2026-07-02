@@ -723,7 +723,7 @@
 
   function renderFeed(feed){
     const feedList = document.getElementById('feedList');
-    feedList.innerHTML = feed.slice(0,5).map(f=>{
+    feedList.innerHTML = feed.filter(f => toTitleCase(f.sdr) !== 'Unknown Sdr').slice(0,5).map(f=>{
       const direction = f.direction || 'outbound';
       const isInbound = direction === 'inbound';
       const displayName = isInbound
