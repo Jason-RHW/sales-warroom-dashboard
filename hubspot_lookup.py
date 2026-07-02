@@ -147,12 +147,12 @@ def _phone_variants(raw_digits: str) -> list[str]:
         return [raw_digits] if raw_digits else []
     area, mid, last = digits[:3], digits[3:6], digits[6:]
     return [
-        raw_digits,
-        digits,
-        f"+1{digits}",
-        f"1{digits}",
-        f"({area}) {mid}-{last}",
-        f"{area}-{mid}-{last}",
+        digits,                       # 9495551234  ← confirmed HubSpot storage format
+        f"+1{digits}",                # +19495551234
+        f"1{digits}",                 # 19495551234
+        f"({area}) {mid}-{last}",    # (949) 555-1234
+        f"{area}-{mid}-{last}",      # 949-555-1234
+        raw_digits,                   # +1 949-555-1234 (Aircall raw format, last)
     ]
 
 
