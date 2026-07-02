@@ -39,10 +39,15 @@ class CallEvent(Base):
     outcome = Column(String, nullable=True, index=True)
     # one of: answered | voicemail | missed | None (still in progress)
 
+    direction = Column(String, nullable=True, default="outbound", index=True)
+    # "outbound" (SDR dialing out) or "inbound" (customer calling in)
+    # NULL treated as "outbound" for backward compat with existing rows.
+
+    contact_name = Column(String, nullable=True)
+    # For inbound calls: the caller's resolved name from HubSpot.
+    # For outbound calls: NULL (company_name is used instead).
+
     # Tags applied by the SDR after the call (via call.tagged webhook event).
-    # Stored as comma-separated tag names, e.g. "Spoke with Contact,Send Sample".
-    # This is the source of truth for answered/sample KPI counting — not the
-    # call.answered event, which fires for voicemail machine pickups too.
     tags = Column(String, nullable=True)
 
     started_at = Column(DateTime(), nullable=False, index=True)  # naive, always UTC
