@@ -732,9 +732,7 @@
       const iconEl = directionIconHtml(direction, 32);
       const stateStr = f.state ? ` (${f.state})` : '';
       const companyLine = `${f.company}${stateStr}`;
-      const subLine = isInbound
-        ? `${companyLine} <span style="color:#5C6584;">· ${toTitleCase(f.sdr)}</span>`
-        : companyLine;
+      const subLine = companyLine;
       return `
       <div class="feed-item">
         ${iconEl}
