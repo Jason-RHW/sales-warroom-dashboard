@@ -33,6 +33,7 @@ later hangup, which is what answered_calls/connect_rate actually count from.
 """
 from fastapi import APIRouter, Request, BackgroundTasks
 from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -53,6 +54,30 @@ AIRCALL_STATUS_MAP = {
     "call.hungup": "ended",
     "call.voicemail_left": "voicemail",
 }
+
+
+def _format_phone_number(phone_number: str) -> str:
+    digits = "".join(c for c in phone_number if c.isdigit())
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return phone_number
+
+
+def _refresh_aircall_metadata(
+    existing: CallEvent,
+    sdr_name: Optional[str],
+    direction: Optional[str],
+) -> None:
+    """Patch placeholder values when later Aircall events contain more data."""
+    if sdr_name and (
+        not existing.sdr_name or existing.sdr_name == "Unknown SDR"
+    ):
+        existing.sdr_name = sdr_name
+
+    if direction and existing.direction != direction:
+        existing.direction = direction
 
 
 def _close_call(existing: CallEvent, reason_event: str) -> None:
@@ -100,18 +125,17 @@ async def _enrich_company_in_background(
             row.state = company["state"]
             row.industry = company["industry"]
             row.hubspot_company_id = company.get("hubspot_company_id")
+
+            # The first webhook for a call sometimes lacks direction. If a
+            # later event fixed it before this task runs, trust the row.
+            effective_direction = row.direction or direction
+
             # For inbound calls: use resolved contact name, or fall back to
             # the formatted phone number as the caller identifier
-            if direction == "inbound":
+            if effective_direction == "inbound":
                 resolved = company.get("contact_name")
                 if not resolved and phone_number:
-                    digits = "".join(c for c in phone_number if c.isdigit())
-                    if len(digits) == 11 and digits.startswith("1"):
-                        digits = digits[1:]
-                    if len(digits) == 10:
-                        resolved = f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
-                    else:
-                        resolved = phone_number
+                    resolved = _format_phone_number(phone_number)
                 row.contact_name = resolved
             db.commit()
     finally:
@@ -133,6 +157,25 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
             .filter(CallEvent.aircall_call_id == aircall_call_id)
             .first()
         )
+
+        user = data.get("user") or {}
+        sdr_name = (user.get("name") or "").strip() or None
+        phone_number = (data.get("raw_digits") or data.get("number") or "")
+
+        # Do not turn a missing direction into outbound too early. Aircall
+        # often sends fuller call data on later events, and existing rows are
+        # refreshed below when that better value arrives.
+        direction = (data.get("direction") or "").strip() or None
+        direction_for_insert = direction or "outbound"
+        print(
+            f"[webhook] event={event_type} "
+            f"direction_raw={data.get('direction')!r} "
+            f"direction_used={direction_for_insert} "
+            f"call_id={aircall_call_id}"
+        )
+
+        if existing:
+            _refresh_aircall_metadata(existing, sdr_name, direction)
 
         # call.ended arrives ~30s after call.hungup with the final duration.
         # Normally the call is already closed by hungup by this point, so
@@ -160,14 +203,10 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
 
         internal_status = AIRCALL_STATUS_MAP.get(event_type)
         if internal_status is None:
+            if existing:
+                db.commit()
             return {"received": True, "ignored": True, "event": event_type}
 
-        user = data.get("user") or {}
-        sdr_name = user.get("name", "Unknown SDR")
-        phone_number = (data.get("raw_digits") or data.get("number") or "")
-
-        direction = data.get("direction", "outbound")
-        print(f"[webhook] event={event_type} direction_raw={data.get('direction')!r} direction_used={direction} call_id={aircall_call_id}")
         # Both inbound and outbound are now tracked.
         # Inbound calls are excluded from KPI/SDR counts in the aggregator
         # but shown in the live activity feed.
@@ -202,11 +241,11 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
             # below fills in the real company/state/industry a moment later.
             db.add(CallEvent(
                 aircall_call_id=aircall_call_id,
-                sdr_name=sdr_name,
+                sdr_name=sdr_name or "Unknown SDR",
                 company_name="Unknown Company",
                 state=None,
                 industry=None,
-                direction=direction,
+                direction=direction_for_insert,
                 status=internal_status,
                 is_active=is_active,
                 outcome="answered" if event_type == "call.answered" else (
@@ -221,7 +260,7 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
                 phone_number,
                 customer_first_name,
                 customer_last_name,
-                direction,
+                direction_for_insert,
             )
             return {"received": True, "event": event_type}
 
