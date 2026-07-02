@@ -124,7 +124,13 @@ async def run():
                     row.hubspot_company_id = result.get("hubspot_company_id")
                 resolved += 1
             else:
-                print(f"✗ no match in HubSpot")
+                state_display = result["state"] or "NULL"
+                print(f"✗ no HubSpot match; area-code state={state_display}")
+                if not DRY_RUN:
+                    row.company_name = result["company_name"]
+                    row.state = result["state"]
+                    row.industry = result["industry"]
+                    row.hubspot_company_id = result.get("hubspot_company_id")
                 failed += 1
 
             if not DRY_RUN and (i + 1) % 10 == 0:
