@@ -85,9 +85,7 @@ def _refresh_aircall_metadata(
         return
 
     if direction and existing.direction != direction:
-        # Never overwrite 'inbound' — once classified as inbound, it stays inbound.
-        # Later Aircall events can have direction=None or wrong values.
-        if existing.direction != "inbound":
+        if existing.direction != "inbound":  # never downgrade inbound to outbound
             existing.direction = direction
 
 
