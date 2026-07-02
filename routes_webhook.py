@@ -131,7 +131,7 @@ async def _refresh_call_from_aircall_in_background(aircall_call_id: str) -> None
     user = call.get("user") or {}
     sdr_name = (user.get("name") or "").strip() or None
     raw_direction = (call.get("direction") or "").strip() or None
-    direction = "inbound" if not sdr_name else raw_direction
+    direction = "inbound" if (not sdr_name or sdr_name == "Unknown SDR") else raw_direction
     phone_number = call.get("raw_digits") or call.get("number") or ""
 
     contact = call.get("contact") or {}
@@ -265,7 +265,7 @@ async def aircall_webhook(request: Request, background_tasks: BackgroundTasks):
         # the Aircall payload. If there is no SDR, classify it as inbound now
         # so it never pollutes outbound KPIs while enrichment catches up.
         direction = (data.get("direction") or "").strip() or None
-        direction_for_insert = "inbound" if not sdr_name else (direction or "outbound")
+        direction_for_insert = "inbound" if (not sdr_name or sdr_name == "Unknown SDR") else (direction or "outbound")
         print(
             f"[webhook] event={event_type} "
             f"direction_raw={data.get('direction')!r} "
