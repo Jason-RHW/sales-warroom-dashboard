@@ -38,9 +38,16 @@ def serialize_tags(tags: list[str] | set[str]) -> str:
     return ",".join(sorted(tags))
 
 
+def _matches_any(tags: set[str], targets: set[str]) -> bool:
+    """True if any actual tag contains any target string (substring, not
+    exact match) - so a renamed Aircall tag like "Reception/Gatekeeper
+    Interaction" still matches the "Reception/Gatekeeper" entry below."""
+    return any(target in tag for tag in tags for target in targets)
+
+
 def is_answered(tags_str: str | None) -> bool:
-    return bool(parse_tags(tags_str) & ANSWERED_TAGS)
+    return _matches_any(parse_tags(tags_str), ANSWERED_TAGS)
 
 
 def is_sample(tags_str: str | None) -> bool:
-    return SAMPLE_TAG in parse_tags(tags_str)
+    return _matches_any(parse_tags(tags_str), {SAMPLE_TAG})
