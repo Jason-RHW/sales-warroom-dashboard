@@ -830,7 +830,7 @@
      Multiple simultaneous samples are queued so sequences never
      overlap. Files live in /audio/ in the repo.
   ============================================================ */
-  const CHEERFUL_TRACKS = ['/audio/cheerful_1.mp3', '/audio/cheerful_2.mp3'];
+  const CHEERFUL_TRACKS = ['/audio/cheerful_1.mp3', '/audio/cheerful_2.mp3', '/audio/cheerful_3.mp3'];
   const CLAPPING_SRC = '/audio/clapping.mp3';
   const VOICE_DELAY_MS = 2000;
   const SAMPLE_VOICE_FILES = {
@@ -971,45 +971,72 @@
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   }
 
+  const MUSIC_VOLUME = 0.8;
+  const CLAPPING_VOLUME = 0.7;
+
+  // <audio>.volume tops out at 1.0, which isn't enough headroom to sit above
+  // full-volume music + clapping. Routing the voice line through a Web Audio
+  // GainNode lets it go louder than "normal max" instead of ducking everything
+  // else down.
+  const VOICE_GAIN = 2.6;
+  let sharedAudioCtx = null;
+  function getAudioCtx(){
+    if (!sharedAudioCtx) sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {});
+    return sharedAudioCtx;
+  }
+  function playBoostedVoice(src, gain){
+    const audio = new Audio(src);
+    audio.volume = 1.0;
+    try {
+      const ctx = getAudioCtx();
+      const source = ctx.createMediaElementSource(audio);
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = gain;
+      source.connect(gainNode).connect(ctx.destination);
+    } catch (e) {
+      // Web Audio graph failed to set up (e.g. reused element) — still
+      // audible at plain volume, just without the extra boost.
+    }
+    return audio;
+  }
+
   function playSampleCelebration(sdrName, feed, onComplete) {
     const musicSrc = CHEERFUL_TRACKS[Math.floor(Math.random() * CHEERFUL_TRACKS.length)];
     const music = new Audio(musicSrc);
-    music.volume = 0.8;
+    music.volume = MUSIC_VOLUME;
 
     startEffectLoop(feedStateFor(sdrName, feed));
 
+    // Clapping starts right alongside the music and loops until the music ends.
+    const clapping = new Audio(CLAPPING_SRC);
+    clapping.loop = true;
+    clapping.volume = CLAPPING_VOLUME;
+    clapping.play().catch(() => {});
+
     const key = sdrName.split(' ')[0].toLowerCase();
     const voiceSrc = SAMPLE_VOICE_FILES[key];
-    let clapping = null;
 
-    const startClapping = () => {
-      clapping = new Audio(CLAPPING_SRC);
-      clapping.loop = true;
-      clapping.volume = 0.7;
-      clapping.play().catch(() => {});
-    };
-
-    const voiceTimer = setTimeout(() => {
-      if (voiceSrc) {
-        const voice = new Audio(voiceSrc);
-        voice.volume = 1.0;
-        voice.onended = startClapping;
-        voice.play().catch(startClapping);
-      } else {
-        startClapping();
-      }
-    }, VOICE_DELAY_MS);
+    const voiceTimer = voiceSrc ? setTimeout(() => {
+      // Music and clapping stay at full volume; the voice line is boosted
+      // above normal max instead, so nothing needs to be dimmed for it.
+      const voice = playBoostedVoice(voiceSrc, VOICE_GAIN);
+      voice.play().catch(() => {});
+    }, VOICE_DELAY_MS) : null;
 
     music.onended = () => {
-      clearTimeout(voiceTimer);
+      if (voiceTimer) clearTimeout(voiceTimer);
       stopEffectLoop();
-      if (clapping) { clapping.pause(); clapping.currentTime = 0; }
+      clapping.pause();
+      clapping.currentTime = 0;
       onComplete();
     };
     music.play().catch(() => {
       // Autoplay blocked or file missing — don't strand the queue.
-      clearTimeout(voiceTimer);
+      if (voiceTimer) clearTimeout(voiceTimer);
       stopEffectLoop();
+      clapping.pause();
+      clapping.currentTime = 0;
       onComplete();
     });
   }

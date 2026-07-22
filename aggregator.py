@@ -168,7 +168,8 @@ def build_dashboard_payload(db: Session) -> dict:
             "connect_rate": rate,
             "samples": len(samples),
         })
-    sdr_table.sort(key=lambda s: s["calls"], reverse=True)
+    # Rank by call volume first, samples as tiebreaker, connect rate as final tiebreaker.
+    sdr_table.sort(key=lambda s: (s["calls"], s["samples"], s["connect_rate"]), reverse=True)
     sdr_table = sdr_table[:6]
 
     return {
