@@ -149,6 +149,7 @@ def build_dashboard_payload(db: Session) -> dict:
             "direction": direction,
             "timer_seconds": elapsed,
             "started_at_time": started_at_time,
+            "sample": is_sample(r.tags),
         })
 
     # ---- SDR leaderboard — outbound calls only ----
