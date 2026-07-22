@@ -230,6 +230,18 @@
     0%,100%{ box-shadow:0 0 0 0 rgba(45,217,106,0.0); }
     50%{ box-shadow:0 0 18px 2px rgba(45,217,106,0.4); }
   }
+  .state-tile.celebrate{
+    animation:tile-celebrate 700ms ease-out;
+    z-index:6;
+  }
+  @keyframes tile-celebrate{
+    0%{ background:rgba(255,214,64,0.95); border-color:#FFE699; box-shadow:0 0 22px 6px rgba(255,214,64,0.85); transform:translateY(-3px) scale(1.06); color:#3A2A00; }
+    100%{ background:inherit; box-shadow:0 0 0 0 rgba(255,214,64,0); transform:translateY(0) scale(1); }
+  }
+  #fireworksCanvas{
+    position:fixed; inset:0; width:100vw; height:100vh;
+    pointer-events:none; z-index:9999;
+  }
   .state-tile .abbr{ letter-spacing:0.03em; }
   .state-tile .tile-total{ font-size:10px; color:var(--text-secondary); margin-top:2px; font-family:var(--font-mono); font-weight:600; opacity:0.9;}
   .feed-call-time{
@@ -448,6 +460,8 @@
   </div>
 
 </div>
+
+<canvas id="fireworksCanvas"></canvas>
 
 <script>
   /* ============================================================
@@ -779,54 +793,212 @@
   }
 
   /* ============================================================
-     SAMPLE SOUND EFFECT
-     Plays crowd cheer then a voice announcement when any SDR's
-     sample count increases. Files live in /audio/ in the repo.
-     SDRs without a voice file get the cheer only.
+     SAMPLE CELEBRATION SEQUENCE
+     Fires when any SDR's sample count increases. Timeline:
+       t=0        random cheerful track starts; fireworks + map
+                  ripple begin repeating in a loop
+       t=+2s      "<name> just got a sample" voice line plays
+                  (SDRs without a voice file skip this step)
+       right after the voice line ends, clapping starts and loops
+       when the cheerful track ends, everything stops at once
+     Multiple simultaneous samples are queued so sequences never
+     overlap. Files live in /audio/ in the repo.
   ============================================================ */
-  const CHEER_SRC = '/audio/cheer.mp3';
+  const CHEERFUL_TRACKS = ['/audio/cheerful_1.mp3', '/audio/cheerful_2.mp3'];
+  const CLAPPING_SRC = '/audio/clapping.mp3';
+  const VOICE_DELAY_MS = 2000;
   const SAMPLE_VOICE_FILES = {
     'grace':   '/audio/sample_grace.mp3',
     'maria':   '/audio/sample_maria.mp3',
+    'mary':    '/audio/sample_mary.mp3',
+    'aliza':   '/audio/sample_aliza.mp3',
     // Add more as you generate them: 'jason': '/audio/sample_jason.mp3', etc.
   };
 
   let prevSamples = {};        // sdrName → last known sample count
-  let sampleQueue = [];        // SDR names queued for announcement
-  let isPlayingAudio = false;
+  let celebrationQueue = [];   // {sdrName, feed} queued while one is playing
+  let isCelebrating = false;
 
-  function playSampleAnnouncement(sdrName) {
-    isPlayingAudio = true;
+  /* ---------- FIREWORKS ---------- */
+  const FIREWORK_COLORS = ['#4D9EFF','#2DD96A','#FFB020','#EC4899','#A855F7','#F5F7FF'];
+
+  function launchFireworks(){
+    const canvas = document.getElementById('fireworksCanvas');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const w = window.innerWidth, h = window.innerHeight;
+
+    let particles = [];
+    const bursts = 4;
+    for(let b=0; b<bursts; b++){
+      setTimeout(()=>{
+        const cx = w * (0.15 + Math.random()*0.7);
+        const cy = h * (0.12 + Math.random()*0.5);
+        const count = 110;
+        for(let i=0;i<count;i++){
+          const angle = (Math.PI*2*i)/count + Math.random()*0.2;
+          const speed = 3.5 + Math.random()*5.5;
+          particles.push({
+            x:cx, y:cy,
+            vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed,
+            life:60+Math.random()*25, maxLife:85,
+            color: FIREWORK_COLORS[Math.floor(Math.random()*FIREWORK_COLORS.length)],
+            size: 3.5+Math.random()*3
+          });
+        }
+      }, b*300);
+    }
+
+    let frame = 0;
+    const maxFrames = bursts*300/16 + 90;
+    (function animate(){
+      frame++;
+      ctx.clearRect(0,0,w,h);
+      particles.forEach(p=>{
+        p.x += p.vx; p.y += p.vy; p.vy += 0.055; p.life--;
+        ctx.globalAlpha = Math.max(p.life / p.maxLife, 0);
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+      ctx.globalAlpha = 1;
+      particles = particles.filter(p=>p.life>0);
+      if(frame < maxFrames){
+        requestAnimationFrame(animate);
+      } else {
+        ctx.clearRect(0,0,w,h);
+      }
+    })();
+  }
+
+  /* ---------- MAP RIPPLE ----------
+     Several distinct light-up patterns; one is picked at random each
+     time it's called, so repeated celebrations (the effect loop calls
+     this every 1.4s) don't all look the same. */
+  const MAP_RIPPLE_PATTERNS = {
+    // Expanding ring outward from the origin state
+    expand: (t, origin) => Math.hypot(t.s.col-origin.col, t.s.row-origin.row) * 60,
+    // Vertical wave sweeping left-to-right across the whole map
+    wave: (t, origin) => Math.abs(t.s.col-origin.col) * 55,
+    // Same row/column as origin lights first, then everything else
+    cross: (t, origin) => {
+      const onCross = t.s.col===origin.col || t.s.row===origin.row;
+      const dist = Math.abs(t.s.col-origin.col) + Math.abs(t.s.row-origin.row);
+      return (onCross ? 0 : 150) + dist*35;
+    },
+    // Spiral arm rotating outward from the origin
+    spiral: (t, origin) => {
+      const dx = t.s.col-origin.col, dy = t.s.row-origin.row;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx); // -PI..PI
+      return dist*50 + ((angle+Math.PI)/(2*Math.PI))*550;
+    },
+    // Random twinkle, no relation to origin at all
+    sparkle: () => Math.random()*900,
+  };
+  const MAP_RIPPLE_PATTERN_NAMES = Object.keys(MAP_RIPPLE_PATTERNS);
+
+  function rippleMap(originAbbr){
+    const origin = stateLayout.find(s=>s.a===originAbbr) || {col:6, row:3};
+    const patternName = MAP_RIPPLE_PATTERN_NAMES[Math.floor(Math.random()*MAP_RIPPLE_PATTERN_NAMES.length)];
+    const delayFor = MAP_RIPPLE_PATTERNS[patternName];
+
+    document.querySelectorAll('.state-tile').forEach(tile=>{
+      const abbrEl = tile.querySelector('.abbr');
+      if(!abbrEl) return;
+      const s = stateLayout.find(x=>x.a===abbrEl.textContent);
+      if(!s) return;
+      const delay = delayFor({tile, s}, origin);
+      setTimeout(()=>{
+        tile.classList.add('celebrate');
+        setTimeout(()=>tile.classList.remove('celebrate'), 700);
+      }, delay);
+    });
+  }
+
+  function feedStateFor(sdrName, feed){
+    const displayName = toTitleCase(sdrName);
+    const hit = (feed || []).find(f => toTitleCase(f.sdr) === displayName && f.state);
+    return hit ? hit.state : null;
+  }
+
+  /* Repeats fireworks + map ripple every 1.4s until stopEffectLoop() is called. */
+  let effectLoopHandle = null;
+  function startEffectLoop(originState){
+    launchFireworks();
+    rippleMap(originState);
+    effectLoopHandle = setInterval(() => {
+      launchFireworks();
+      rippleMap(originState);
+    }, 1400);
+  }
+  function stopEffectLoop(){
+    if (effectLoopHandle) { clearInterval(effectLoopHandle); effectLoopHandle = null; }
+    const canvas = document.getElementById('fireworksCanvas');
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function playSampleCelebration(sdrName, feed, onComplete) {
+    const musicSrc = CHEERFUL_TRACKS[Math.floor(Math.random() * CHEERFUL_TRACKS.length)];
+    const music = new Audio(musicSrc);
+    music.volume = 0.8;
+
+    startEffectLoop(feedStateFor(sdrName, feed));
+
     const key = sdrName.split(' ')[0].toLowerCase();
     const voiceSrc = SAMPLE_VOICE_FILES[key];
+    let clapping = null;
 
-    const playCheer = () => {
-      const cheer = new Audio(CHEER_SRC);
-      cheer.volume = 0.7;
-      cheer.play().catch(() => {});
-      cheer.onended = () => {
-        isPlayingAudio = false;
-        playNextInQueue();
-      };
+    const startClapping = () => {
+      clapping = new Audio(CLAPPING_SRC);
+      clapping.loop = true;
+      clapping.volume = 0.7;
+      clapping.play().catch(() => {});
     };
 
-    if (voiceSrc) {
-      const voice = new Audio(voiceSrc);
-      voice.volume = 1.0;
-      voice.play().catch(() => {});
-      voice.onended = playCheer;
-    } else {
-      playCheer();
-    }
+    const voiceTimer = setTimeout(() => {
+      if (voiceSrc) {
+        const voice = new Audio(voiceSrc);
+        voice.volume = 1.0;
+        voice.onended = startClapping;
+        voice.play().catch(startClapping);
+      } else {
+        startClapping();
+      }
+    }, VOICE_DELAY_MS);
+
+    music.onended = () => {
+      clearTimeout(voiceTimer);
+      stopEffectLoop();
+      if (clapping) { clapping.pause(); clapping.currentTime = 0; }
+      onComplete();
+    };
+    music.play().catch(() => {
+      // Autoplay blocked or file missing — don't strand the queue.
+      clearTimeout(voiceTimer);
+      stopEffectLoop();
+      onComplete();
+    });
   }
 
-  function playNextInQueue() {
-    if (sampleQueue.length === 0 || isPlayingAudio) return;
-    const next = sampleQueue.shift();
-    playSampleAnnouncement(next);
+  function runNextCelebration() {
+    if (isCelebrating || celebrationQueue.length === 0) return;
+    isCelebrating = true;
+    const { sdrName, feed } = celebrationQueue.shift();
+    playSampleCelebration(sdrName, feed, () => {
+      isCelebrating = false;
+      runNextCelebration();
+    });
   }
 
-  function detectSampleIncreases(sdrTable) {
+  function detectSampleIncreases(sdrTable, feed) {
     // Skip on the very first poll — no baseline to compare against yet
     if (Object.keys(prevSamples).length === 0) {
       sdrTable.forEach(s => { prevSamples[s.name] = s.samples || 0; });
@@ -836,12 +1008,11 @@
       const prev = prevSamples[s.name] ?? 0;
       const curr = s.samples || 0;
       if (curr > prev) {
-        // SDR got a new sample — queue an announcement
-        sampleQueue.push(s.name);
+        celebrationQueue.push({ sdrName: s.name, feed });
       }
       prevSamples[s.name] = curr;
     });
-    if (!isPlayingAudio) playNextInQueue();
+    runNextCelebration();
   }
 
   /* ============================================================
@@ -857,7 +1028,7 @@
       if(!res.ok) throw new Error('Bad response: ' + res.status);
       const payload = await res.json();
       render(payload);
-      detectSampleIncreases(payload.sdr_table);
+      detectSampleIncreases(payload.sdr_table, payload.feed);
       setStatus('live', 'Live');
       usedFallback = false;
     } catch(err){
